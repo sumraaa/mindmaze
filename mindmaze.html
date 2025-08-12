@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MindMaze — The Real-Time Puzzle Challenge</title>
+  <style>
+    /* ---------- Base & Resets ---------- */
+    :root{
+      --bg:#071028; --card:#0f1724; --accent:#7df9ff; --accent2:#9b7dff; --muted:#9aa6b2;
+      --glass: rgba(255,255,255,0.04);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;color:#e6f0ff}
+    a{color:inherit}
+
+    /* ---------- Landing / Stage ---------- */
+    .stage{
+      min-height:100vh;display:grid;place-items:center;background: radial-gradient(1200px 600px at 10% 10%, rgba(123,125,255,0.06), transparent),
+                linear-gradient(180deg,#041226 0%, #071028 70%);
+      overflow:hidden;position:relative;padding:32px;
+    }
+    /* Particle canvas covers stage */
+    #particle-canvas{position:absolute;inset:0;z-index:0;pointer-events:none}
+
+    .card{position:relative;z-index:2;width:min(980px,96%);background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius:18px;padding:34px;box-shadow:0 10px 40px rgba(2,6,23,0.6);backdrop-filter: blur(6px);}
+
+    .logo{
+      display:flex;gap:16px;align-items:center;justify-content:center;margin-bottom:18px;flex-direction:column
+    }
+    .logo .title{
+      font-weight:800;font-size:40px;letter-spacing:1px;text-transform:uppercase;line-height:1;
+      background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent;
+      filter:drop-shadow(0 6px 20px rgba(123,125,255,0.12));
+      animation: glow 2.8s ease-in-out infinite;
+    }
+    @keyframes glow{
+      0%{text-shadow:0 0 6px rgba(125,249,255,0.06)}
+      50%{text-shadow:0 0 24px rgba(155,125,255,0.12)}
+      100%{text-shadow:0 0 6px rgba(125,249,255,0.06)}
+    }
+    .subtitle{color:var(--muted);font-size:14px}
+
+    .cta{display:flex;gap:12px;margin-top:18px}
+    .btn{padding:12px 18px;border-radius:12px;border:0;cursor:pointer;font-weight:700}
+    .btn-primary{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#031026;box-shadow:0 10px 30px rgba(123,125,255,0.12);transform:translateY(0);transition:transform .18s}
+    .btn-primary:hover{transform:translateY(-4px)}
+    .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--accent)}
+
+    /* ---------- Game Area ---------- */
+    .game-wrap{display:none;min-height:70vh;padding:24px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+    .timer, .score{background:var(--glass);padding:8px 12px;border-radius:10px;font-weight:700}
+    .progress{height:10px;background:rgba(255,255,255,0.04);border-radius:10px;overflow:hidden}
+    .progress > i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .35s}
+
+    .panel{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02));padding:28px;border-radius:14px;box-shadow:inset 0 2px 6px rgba(255,255,255,0.01)}
+
+    .puzzle-title{font-size:20px;margin:0 0 12px 0}
+    .choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:12px}
+    .choice{padding:12px;border-radius:10px;background:rgba(255,255,255,0.02);cursor:pointer;border:1px solid rgba(255,255,255,0.03);transition:transform .12s, box-shadow .12s}
+    .choice:hover{transform:translateY(-4px);box-shadow:0 8px 30px rgba(2,6,23,0.45)}
+
+    .hidden{display:none}
+
+    /* Reaction challenge */
+    .reaction-area{display:flex;align-items:center;justify-content:center;height:220px}
+    .react-circle{width:90px;height:90px;border-radius:50%;background:var(--accent);box-shadow:0 10px 30px rgba(125,249,255,0.08);display:grid;place-items:center;font-weight:900;color:#031026;font-size:18px;cursor:pointer}
+
+    /* Leaderboard and End Screen */
+    .end{display:none;padding:18px;text-align:center}
+    .leaderboard{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+    .lb-item{display:flex;justify-content:space-between;padding:10px 12px;border-radius:8px;background:rgba(255,255,255,0.02)}
+
+    /* Responsive */
+    @media (max-width:640px){
+      .logo .title{font-size:28px}
+      .card{padding:20px}
+    }
+
+    /* Small helper styles */
+    .muted{color:var(--muted);font-size:13px}
+    .flex{display:flex;gap:10px;align-items:center}
+
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <canvas id="particle-canvas"></canvas>
+
+    <div class="card" role="main">
+      <div class="logo">
+        <div class="title">MindMaze</div>
+        <div class="subtitle">The Real-Time Puzzle Challenge — think fast, score higher</div>
+      </div>
+
+      <div id="landing" class="landing">
+        <p class="muted" style="text-align:center;max-width:720px;margin:8px auto 18px">A compact, offline, browser-only puzzle experience combining logic, pattern recognition, and reaction speed. Built with HTML, CSS & JavaScript — perfect for demoing at competitions.</p>
+
+        <div class="cta" style="justify-content:center">
+          <button id="startBtn" class="btn btn-primary">Start Game</button>
+          <button id="howBtn" class="btn btn-ghost">How to Play</button>
+        </div>
+      </div>
+
+      <!-- Game Interface -->
+      <div id="game" class="game-wrap">
+        <div class="topbar">
+          <div class="flex">
+            <div class="timer" id="timer">Time: 00</div>
+            <div class="score" id="score">Score: 0</div>
+          </div>
+          <div style="flex:1;margin:0 12px">
+            <div class="progress" aria-hidden="true"><i id="progbar"></i></div>
+          </div>
+          <div class="flex">
+            <button id="quitBtn" class="btn btn-ghost">Quit</button>
+            <button id="skipBtn" class="btn">Skip</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div id="puzzleArea">
+            <!-- puzzle content injected by JS -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- End / Leaderboard -->
+      <div id="endScreen" class="end">
+        <h3>Game Over</h3>
+        <p class="muted">Your final score: <strong id="finalScore">0</strong></p>
+        <div style="margin-top:10px">
+          <input id="nameInput" placeholder="Enter your name (for leaderboard)" style="padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);width:60%" />
+          <button id="saveScoreBtn" class="btn btn-primary">Save Score</button>
+        </div>
+        <div class="leaderboard" id="leaderboard"></div>
+        <div style="margin-top:12px">
+          <button id="playAgainBtn" class="btn btn-primary">Play Again</button>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+  // ---------------------- Particle Background ----------------------
+  (function(){
+    const canvas = document.getElementById('particle-canvas');
+    const ctx = canvas.getContext('2d');
+    let w = canvas.width = innerWidth; let h = canvas.height = innerHeight;
+    const particles = [];
+    const count = Math.floor((w*h)/60000) + 18; // scale with screen
+
+    function rand(min,max){return Math.random()*(max-min)+min}
+    window.addEventListener('resize',()=>{w=canvas.width=innerWidth;h=canvas.height=innerHeight})
+
+    class P{constructor(){this.x=rand(0,w);this.y=rand(0,h);this.vx=rand(-0.3,0.3);this.vy=rand(-0.2,0.2);this.r=rand(0.6,2.8);this.a=rand(0.05,0.4)}
+      step(){this.x+=this.vx;this.y+=this.vy;this.a+=Math.sin(Date.now()/9000+this.x/1000)*0.0005;if(this.x<0)this.x=w;if(this.x>w)this.x=0;if(this.y<0)this.y=h;if(this.y>h)this.y=0}
+      draw(){ctx.beginPath();ctx.globalAlpha=0.7;ctx.fillStyle='rgba(124,249,255,'+this.a+')';ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.fill()}
+    }
+    for(let i=0;i<count;i++)particles.push(new P())
+    function anim(){ctx.clearRect(0,0,w,h);for(const p of particles){p.step();p.draw();}
+      requestAnimationFrame(anim)}
+    anim();
+  })();
+
+  // ---------------------- Simple Sound (WebAudio) ----------------------
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  const audio = AudioCtx ? new AudioCtx() : null;
+  function beep(freq=440,time=0.06, type='sine'){ if(!audio) return; const o=audio.createOscillator(); const g=audio.createGain(); o.type=type; o.frequency.value=freq; o.connect(g); g.connect(audio.destination); g.gain.value=0.06; o.start(); o.stop(audio.currentTime+time); }
+
+  // ---------------------- Game Data & Logic ----------------------
+  const puzzles = [
+    // multiple choice (easy)
+    {type:'mcq',title:'Which number completes the series: 2, 4, 8, 16, ?',choices:['20','32','24','18'],answer:1, time:12, difficulty:1},
+    {type:'mcq',title:'Riddle: I speak without a mouth and hear without ears. I have nobody, but I come alive with wind. What am I?',choices:['Shadow','Echo','Fire','Wave'],answer:1,time:14,difficulty:1},
+
+    // visual pattern (sequence) - represented as text for offline
+    {type:'pattern',title:'Find the missing symbol: ▲ ▲ ▼ ▲ ▲ ▼ ▲ ? (pattern of two ups, one down)',choices:['▲','▼','◆','●'],answer:1,time:12,difficulty:1},
+
+    // reaction challenge
+    {type:'reaction',title:'Click the circle as fast as you can when it turns green!',time:6,difficulty:1},
+
+    // harder mcq
+    {type:'mcq',title:'Math: If x+2=5 then 2^x = ?',choices:['8','6','4','16'],answer:0,time:10,difficulty:2},
+    {type:'mcq',title:'Logic: Which word is different?',choices:['Apple','Banana','Carrot','Mango'],answer:2,time:10,difficulty:2},
+
+    // pattern with slightly trickier logic
+    {type:'pattern',title:'Sequence: 1, 4, 9, 16, ? (what is the next)',choices:['20','25','30','24'],answer:1,time:12,difficulty:2},
+
+    // reaction harder
+    {type:'reaction',title:'Reaction: Wait for the circle, then tap. Faster = more points!',time:5,difficulty:2}
+  ];
+
+  let state = {score:0,index:0,active:false,timer:0,interval:null,currentPuzzle:null,progress:0}
+
+  const startBtn = document.getElementById('startBtn');
+  const howBtn = document.getElementById('howBtn');
+  const landing = document.getElementById('landing');
+  const gameWrap = document.getElementById('game');
+  const timerEl = document.getElementById('timer');
+  const scoreEl = document.getElementById('score');
+  const prog = document.getElementById('progbar');
+  const puzzleArea = document.getElementById('puzzleArea');
+  const quitBtn = document.getElementById('quitBtn');
+  const skipBtn = document.getElementById('skipBtn');
+
+  // Leaderboard DOMs
+  const endScreen = document.getElementById('endScreen');
+  const finalScore = document.getElementById('finalScore');
+  const saveScoreBtn = document.getElementById('saveScoreBtn');
+  const nameInput = document.getElementById('nameInput');
+  const leaderboardEl = document.getElementById('leaderboard');
+  const playAgainBtn = document.getElementById('playAgainBtn');
+
+  function showLanding(){landing.style.display='block';gameWrap.style.display='none';endScreen.style.display='none'}
+  function showGame(){landing.style.display='none';gameWrap.style.display='block';endScreen.style.display='none'}
+  function showEnd(){landing.style.display='none';gameWrap.style.display='none';endScreen.style.display='block'}
+
+  startBtn.addEventListener('click',()=>{
+    // entrance animation: fade out landing, show game
+    landing.animate([{opacity:1},{opacity:0}],{duration:600,easing:'ease'}).onfinish = ()=>{
+      showGame(); startGame();
+    }
+    // resume audio context on user gesture
+    if(audio && audio.state === 'suspended'){audio.resume().catch(()=>{})}
+  })
+
+  howBtn.addEventListener('click',()=>{
+    alert('Solve a mix of puzzles quickly. Correct answers give points. Reaction puzzles reward speed. Scores are saved locally to the leaderboard. Good luck!')
+  })
+
+  quitBtn.addEventListener('click',()=>{endGame()})
+  skipBtn.addEventListener('click',()=>{nextPuzzle(-1)})
+
+  function startGame(){
+    state.score=0; state.index=0; state.progress=0; state.active=true; updateScore(); nextPuzzle();
+  }
+
+  function endGame(){
+    state.active=false; clearInterval(state.interval); finalScore.textContent = state.score; showEnd(); renderLeaderboard();
+  }
+
+  function updateScore(){ scoreEl.textContent = 'Score: ' + state.score }
+
+  function nextPuzzle(skip=0){
+    clearInterval(state.interval);
+    // adapt difficulty slightly: use index to pick puzzle (shuffle-ish)
+    state.index += (skip===-1?1:1);
+    state.progress = Math.min(100, Math.round((state.index/puzzles.length)*100));
+    prog.style.width = state.progress + '%';
+
+    if(state.index > puzzles.length){
+      // finish
+      return endGame();
+    }
+    const p = puzzles[(state.index-1) % puzzles.length];
+    state.currentPuzzle = p;
+    showPuzzle(p);
+  }
+
+  function showPuzzle(p){
+    puzzleArea.innerHTML='';
+    const h = document.createElement('h4'); h.className='puzzle-title'; h.textContent = p.title; puzzleArea.appendChild(h);
+
+    // set timer
+    let t = p.time || 12; state.timer=t; timerEl.textContent = 'Time: ' + t;
+    const startTs = Date.now();
+    state.interval = setInterval(()=>{
+      const elapsed = Math.floor((Date.now()-startTs)/1000);
+      const remain = Math.max(0, t - elapsed);
+      timerEl.textContent = 'Time: ' + remain;
+      // progress for bar within puzzle
+      const pct = Math.max(0,(1 - (elapsed / t)) * 100);
+      prog.style.width = pct + '%';
+      if(remain <= 3) beep(880,0.04,'sine');
+      if(remain === 0){ clearInterval(state.interval); handleWrong(); }
+    }, 300);
+
+    if(p.type === 'mcq' || p.type === 'pattern'){
+      const choices = document.createElement('div'); choices.className='choices';
+      p.choices.forEach((c,idx)=>{
+        const btn = document.createElement('div'); btn.className='choice'; btn.textContent = c; btn.tabIndex=0;
+        btn.addEventListener('click',()=>{ handleChoice(idx===p.answer, idx, p) });
+        btn.addEventListener('keydown',(e)=>{ if(e.key==='Enter') btn.click() });
+        choices.appendChild(btn);
+      });
+      puzzleArea.appendChild(choices);
+    } else if(p.type === 'reaction'){
+      const reactWrap = document.createElement('div'); reactWrap.className='reaction-area';
+      const circle = document.createElement('div'); circle.className='react-circle'; circle.textContent='Wait';
+      reactWrap.appendChild(circle); puzzleArea.appendChild(reactWrap);
+
+      // random delay then change to green
+      let started=false; let appearedAt=0; const delay = Math.random()*2000 + 1100;
+      circle.style.background='#999'; circle.style.color='#02121a'; circle.textContent='...';
+      setTimeout(()=>{ circle.style.background='linear-gradient(90deg,var(--accent),var(--accent2))'; circle.textContent='GO'; appearedAt = Date.now(); started=true; beep(1200,0.06,'sine'); }, delay);
+
+      circle.addEventListener('click',()=>{
+        if(!started){ // clicked too early
+          clearInterval(state.interval); handleWrong(); return;
+        }
+        const rt = Date.now() - appearedAt; // milliseconds reaction time
+        clearInterval(state.interval);
+        // faster -> more points
+        const earned = Math.max(5, 1200 - Math.min(1000, rt));
+        state.score += Math.round(earned/50) + p.difficulty*2;
+        updateScore(); beep(600,0.06,'sine'); setTimeout(()=> nextPuzzle(), 400);
+      })
+    }
+  }
+
+  function handleChoice(isCorrect, idx, p){ clearInterval(state.interval); if(isCorrect){ state.score += 10 + p.difficulty*3; updateScore(); showFeedback(true); } else { handleWrong(); } }
+  function handleWrong(){ beep(200,0.12,'sawtooth'); // small shake and then next
+    const fb = document.createElement('div'); fb.textContent='Wrong or Time up!'; fb.style.color='#ff9b9b'; fb.style.fontWeight='800'; fb.style.marginTop='12px'; puzzleArea.appendChild(fb);
+    setTimeout(()=>{ nextPuzzle(); },800);
+  }
+  function showFeedback(ok){ const fb = document.createElement('div'); fb.textContent= ok? 'Correct! +'+(10): 'Oops!'; fb.style.color = ok? '#9fffcc':'#ff9b9b'; fb.style.fontWeight='800'; fb.style.marginTop='12px'; puzzleArea.appendChild(fb);
+    beep(ok?1000:300,0.08, ok? 'sine' : 'square'); setTimeout(()=> nextPuzzle(),600);
+  }
+
+  // ---------------------- Leaderboard (localStorage) ----------------------
+  function getLeaderboard(){ try{const raw = localStorage.getItem('mindmaze_lb'); return raw? JSON.parse(raw):[] }catch(e){return []} }
+  function saveToLeaderboard(name,score){ const lb = getLeaderboard(); lb.push({name:name||'Anon',score:score,date:new Date().toISOString()}); lb.sort((a,b)=>b.score-a.score); const trimmed = lb.slice(0,10); localStorage.setItem('mindmaze_lb', JSON.stringify(trimmed)); }
+
+  saveScoreBtn.addEventListener('click',()=>{ const n = (nameInput.value||'Player').trim(); saveToLeaderboard(n,state.score); renderLeaderboard(); saveScoreBtn.disabled=true; })
+  playAgainBtn.addEventListener('click',()=>{ showGame(); startGame(); })
+
+  function renderLeaderboard(){ const lb = getLeaderboard(); leaderboardEl.innerHTML=''; if(lb.length===0){ leaderboardEl.innerHTML='<div class="muted">No scores yet — be the first!</div>'; return }
+    lb.forEach(item=>{ const div = document.createElement('div'); div.className='lb-item'; div.innerHTML = `<div>${escapeHtml(item.name)}</div><div>${item.score}</div>`; leaderboardEl.appendChild(div); }) }
+
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"})[c]) }
+
+  // Initialize UI
+  showLanding(); renderLeaderboard();
+
+  // small accessibility: space to click reaction when playing
+  window.addEventListener('keydown',(e)=>{
+    if(state.active && state.currentPuzzle && state.currentPuzzle.type==='reaction' && e.code === 'Space'){
+      const circle = document.querySelector('.react-circle'); if(circle) circle.click();
+    }
+  })
+
+  // Ensure user can resume audio on mobile by clicking anywhere once
+  document.body.addEventListener('click',()=>{ if(audio && audio.state==='suspended') audio.resume().catch(()=>{}); },{once:true})
+
+  </script>
+</body>
+</html>
